@@ -7,12 +7,12 @@
     <parent>
         <groupId>zone.dragon</groupId>
         <artifactId>base-java-pom</artifactId>
-        <version>1.3.33-c2a3a2</version>
+        <version>4.1.1</version>
     </parent>
 
     <groupId>zone.dragon.reflection</groupId>
     <artifactId>reflect-util</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.0.${revision}</version>
 
     <name>Reflection :: Utilities</name>
     <description>
@@ -33,6 +33,10 @@
             <url>https://github.com/dragonzone/reflect-util/blob/master/LICENSE</url>
         </license>
     </licenses>
+
+    <properties>
+        <error-prone>false</error-prone>
+    </properties>
 
     <dependencies>
         <dependency>

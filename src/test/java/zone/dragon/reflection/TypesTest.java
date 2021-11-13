@@ -22,9 +22,16 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.lang.reflect.TypeVariable;
 import java.lang.reflect.WildcardType;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
+import java.util.TreeSet;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -537,6 +544,89 @@ public class TypesTest {
             assertThat(wildcardType.getUpperBounds()).isEqualTo(superTypes);
             assertThat(wildcardType).hasToString("? extends Foo");
         }
+
+        @Test
+        void play() {
+            ParameterizedType listString = Types.parameterized(null, List.class, String.class);
+            Map<TypeVariable<? extends Class<?>>, Type> vars = Types.resolveTypeVariables(ArrayList.class);
+            System.out.println(vars);
+            System.out.println(listString);
+            ParameterizedType bind = bind(ArrayList.class, listString);
+            System.out.println(bind);
+
+            ParameterizedType bind1 = bind(TreeSet.class, Types.parameterized(null, Collection.class, String.class));
+            System.out.println(bind1);
+
+        }
+
+        ParameterizedType bind2(Type subType, ParameterizedType superType) {
+            Class<?> subClass;
+            Type[] subBinds;
+            if (subType instanceof Class) {
+                subClass = (Class<?>) subType;
+                subBinds = new Type[subClass.getTypeParameters().length];
+                System.arraycopy(subClass.getTypeParameters(), 0, subBinds, 0, subBinds.length);
+            } else if (subType instanceof ParameterizedType) {
+                subClass = Types.rawType(((ParameterizedType) subType).getRawType());
+                subBinds = new Type[subClass.getTypeParameters().length];
+                System.arraycopy(((ParameterizedType) subType).getActualTypeArguments(), 0, subBinds, 0, subBinds.length);
+            } else {
+                throw new IllegalArgumentException("subType must be a class or parameterized type");
+            }
+
+            Map<TypeVariable<? extends Class<?>>, Type> vars = Types.resolveTypeVariables(subType);
+            TypeVariable<?>[] superVariables = Types.rawType(superType.getRawType()).getTypeParameters();
+            Type[] superBinds = superType.getActualTypeArguments();
+
+            Map<TypeVariable<?>, Type> newVars = new HashMap<>();
+            Set<TypeVariable<?>> toProcess = new HashSet<>();
+            toProcess.addAll(Arrays.asList(superVariables));
+            for (int i = 0; i < superBinds.length; i++) {
+                newVars.put(superVariables[i], superBinds[i]);
+            }
+            while (!toProcess.isEmpty()) {
+                TypeVariable<?> next;
+            }
+            return null;
+        }
+
+        ParameterizedType bind(Type subType, ParameterizedType superType) {
+            Class<?> subClass;
+            Type[] subBinds;
+            if (subType instanceof Class) {
+                subClass = (Class<?>) subType;
+                subBinds = new Type[subClass.getTypeParameters().length];
+                System.arraycopy(subClass.getTypeParameters(), 0, subBinds, 0, subBinds.length);
+            } else if (subType instanceof ParameterizedType) {
+                subClass = Types.rawType(((ParameterizedType) subType).getRawType());
+                subBinds = new Type[subClass.getTypeParameters().length];
+                System.arraycopy(((ParameterizedType) subType).getActualTypeArguments(), 0, subBinds, 0, subBinds.length);
+            } else {
+                throw new IllegalArgumentException("subType must be a class or parameterized type");
+            }
+
+
+            Map<TypeVariable<? extends Class<?>>, Type> vars = Types.resolveTypeVariables(subType);
+
+            TypeVariable<?>[] superVariables = Types.rawType(superType.getRawType()).getTypeParameters();
+            Type[] superBinds = superType.getActualTypeArguments();
+
+            for(int i = 0; i < superVariables.length; i++) {
+                Type reverse = vars.get(superVariables[i]);
+                if (reverse instanceof TypeVariable) {
+                    vars.put((TypeVariable)reverse, superBinds[i]);
+                }
+            }
+            for (int i = 0; i < subBinds.length; i++) {
+                if (vars.containsKey(subBinds[i])) {
+                    subBinds[i] = vars.get(subBinds[i]);
+                }
+            }
+            return Types.parameterized(null, subType, subBinds);
+
+        }
+
+
     }
 
 }

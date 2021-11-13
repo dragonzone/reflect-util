@@ -23,10 +23,7 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.lang.reflect.TypeVariable;
 import java.lang.reflect.WildcardType;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import lombok.NonNull;
@@ -54,8 +51,8 @@ public final class Types {
      * @throws NullPointerException
      *     If {@code superType} or {@code subType} is {@code null}
      */
-    public static boolean isAssignableFrom(@NonNull Class<?> superType, @NonNull Type subType) {
-        return superType.isAssignableFrom(rawType(subType));
+    public static boolean isAssignableFrom(@NonNull Type superType, @NonNull Type subType) {
+        return rawType(superType).isAssignableFrom(rawType(subType));
     }
 
     /**
@@ -102,6 +99,20 @@ public final class Types {
         return new WildcardTypeImpl(new Type[0], subTypes);
     }
 
+    public static WildcardType wildcard(@NonNull Type[] upperBounds, @NonNull Type[] lowerBounds) {
+        for (int i = 0; i < upperBounds.length; i++) {
+            if (upperBounds[i] == null) {
+                throw new NullPointerException(String.format("upperBounds[%d]", i));
+            }
+        }
+        for (int i = 0; i < lowerBounds.length; i++) {
+            if (lowerBounds[i] == null) {
+                throw new NullPointerException(String.format("lowerBounds[%d]", i));
+            }
+        }
+        return new WildcardTypeImpl(upperBounds, lowerBounds);
+    }
+
 
     /**
      * Creates a wildcard subtype, such as {@code ? extends Type & Type2 & Type3}
@@ -135,31 +146,52 @@ public final class Types {
      *     If {@code componentType} is {@code null}
      */
     public static Type arrayOf(@NonNull Type componentType) {
-        if (componentType == int.class) {
-            return int[].class;
-        } else if (componentType == byte.class) {
-            return byte[].class;
-        } else if (componentType == short.class) {
-            return short[].class;
-        } else if (componentType == long.class) {
-            return long[].class;
-        } else if (componentType == char.class) {
-            return char[].class;
-        } else if (componentType == double.class) {
-            return double[].class;
-        } else if (componentType == float.class) {
-            return float[].class;
-        } else if (componentType == boolean.class) {
-            return boolean[].class;
-        } else if (componentType == void.class) {
-            throw new IllegalArgumentException("Can't create a void[] array");
-        } else if (componentType == Void.class) {
-            throw new IllegalArgumentException("Can't create a Void[] array");
-        } else if (componentType instanceof Class) {
-            return Array.newInstance((Class) componentType, 0).getClass();
+        if (componentType instanceof Class) {
+            return arrayOf((Class<?>) componentType);
         } else {
             return new GenericArrayTypeImpl(componentType);
         }
+    }
+
+    public static Class<?> arrayOf(@NonNull Class<?> componentClass) {
+        if (componentClass == int.class) {
+            return int[].class;
+        } else if (componentClass == byte.class) {
+            return byte[].class;
+        } else if (componentClass == short.class) {
+            return short[].class;
+        } else if (componentClass == long.class) {
+            return long[].class;
+        } else if (componentClass == char.class) {
+            return char[].class;
+        } else if (componentClass == double.class) {
+            return double[].class;
+        } else if (componentClass == float.class) {
+            return float[].class;
+        } else if (componentClass == boolean.class) {
+            return boolean[].class;
+        } else if (componentClass == void.class) {
+            throw new IllegalArgumentException("Can't create a void[] array");
+        } else if (componentClass == Void.class) {
+            throw new IllegalArgumentException("Can't create a Void[] array");
+        } else {
+            return Array.newInstance(componentClass, 0).getClass();
+        }
+    }
+
+    public static Type commonSuper(Type... types) {
+        if (types == null || types.length == 0) {
+            return Object.class;
+        }
+        Type common = types[0];
+        for (int i = 1; i < types.length; i++) {
+            if (isAssignableFrom(types[i], common)) {
+                common = types[i];
+            } else if (!isAssignableFrom(common, types[i])) {
+                common = Object.class;
+            } // else common is a supertype of types[i], and we can proceed
+        }
+        return common;
     }
 
     /**
@@ -172,29 +204,7 @@ public final class Types {
      * @return The raw type for {@code type}
      */
     public static Class<?> rawType(Type type) {
-        if (type instanceof Class) {
-            return (Class) type;
-        } else if (type instanceof ParameterizedType) {
-            return rawType(((ParameterizedType) type).getRawType());
-        } else if (type instanceof WildcardType) {
-            Type[] upperBounds = ((WildcardType) type).getUpperBounds();
-            if (upperBounds == null || upperBounds.length == 0) {
-                return Object.class;
-            } else {
-                return rawType(upperBounds[0]);
-            }
-        } else if (type instanceof GenericArrayType) {
-            return (Class) arrayOf(rawType(((GenericArrayType) type).getGenericComponentType()));
-        } else if (type instanceof TypeVariable) {
-            Type[] upperBounds = ((TypeVariable) type).getBounds();
-            if (upperBounds == null || upperBounds.length == 0) {
-                return Object.class;
-            } else {
-                return rawType(upperBounds[0]);
-            }
-        } else {
-            return Object.class;
-        }
+        return TypeVisitor.visit(type, RawTypeVisitor.INSTANCE);
     }
 
     /**
@@ -239,39 +249,10 @@ public final class Types {
      *     If {@code typeVariables} is {@code null}
      */
     public static Type reifyType(Type type, @NonNull Map<? extends TypeVariable<?>, Type> typeVariables) {
-        if (type instanceof Class) {
-            return type;
-        } else if (type instanceof ParameterizedType) {
-            Type[] boundTypes = ((ParameterizedType) type).getActualTypeArguments();
-            Type[] newBoundTypes = new Type[boundTypes.length];
-            for (int i = 0; i < boundTypes.length; i++) {
-                newBoundTypes[i] = reifyType(boundTypes[i], typeVariables);
-            }
-            return parameterized(
-                reifyType(((ParameterizedType) type).getOwnerType(), typeVariables),
-                reifyType(((ParameterizedType) type).getRawType(), typeVariables),
-                newBoundTypes
-            );
-        } else if (type instanceof TypeVariable) {
-            Type resolvedType = typeVariables.get(type);
-            if (resolvedType != null) {
-                return reifyType(resolvedType, typeVariables);
-            } else {
-                return reifyType(((TypeVariable) type).getBounds()[0], typeVariables);
-            }
-        } else if (type instanceof GenericArrayType) {
-            Type componentType = ((GenericArrayType) type).getGenericComponentType();
-            Type newComponentType = reifyType(componentType, typeVariables);
-            return arrayOf(newComponentType);
-        } else if (type instanceof WildcardType) {
-            Type[] upperBounds = ((WildcardType) type).getUpperBounds();
-            if (upperBounds != null && upperBounds.length > 0) {
-                return reifyType(upperBounds[0], typeVariables);
-            } else {
-                return Object.class;
-            }
+        if (type == null) {
+            return null;
         }
-        return type;
+        return TypeVisitor.visit(type, new ReifyTypeVisitor(typeVariables));
     }
 
     /**
@@ -283,27 +264,10 @@ public final class Types {
      * @return A map of all discovered type variables that have bindings, or the empty map if no type bindings were found
      */
     public static Map<TypeVariable<? extends Class<?>>, Type> resolveTypeVariables(Type type) {
-        Map<TypeVariable<? extends Class<?>>, Type> resolvedTypeVariables = new HashMap<>();
-        resolveTypeVariables(type, resolvedTypeVariables);
-        return resolvedTypeVariables;
-    }
-
-    private static void resolveTypeVariables(Type rootType, @NonNull Map<TypeVariable<? extends Class<?>>, Type> resolvedTypeVariables) {
-        List<Type> remainingTypes = new ArrayList<>();
-        remainingTypes.add(rootType);
-        while (!remainingTypes.isEmpty()) {
-            Type type = remainingTypes.remove(0);
-            if (type instanceof ParameterizedType) {
-                Class<?> rawClass = rawType(type);
-                TypeVariable<? extends Class<?>>[] boundVariables = rawClass.getTypeParameters();
-                for (int i = 0; i < boundVariables.length; i++) {
-                    resolvedTypeVariables.putIfAbsent(boundVariables[i], ((ParameterizedType) type).getActualTypeArguments()[i]);
-                }
-            } else if (type instanceof Class) {
-                remainingTypes.addAll(Arrays.asList(((Class) type).getGenericInterfaces()));
-                remainingTypes.add(((Class) type).getGenericSuperclass());
-            }
+        if (type == null) {
+            return new HashMap<>();
         }
+        return TypeVisitor.visit(type, TypeVariableTypeVisitor.INSTANCE);
     }
 
     /**
@@ -330,13 +294,39 @@ public final class Types {
      */
     public static Type resolveTypeVariable(Type boundType, @NonNull Class<?> targetClass, int targetTypeVariableIndex) {
         TypeVariable<? extends Class<?>>[] typeParameters = targetClass.getTypeParameters();
-        if (typeParameters == null || typeParameters.length == 0) {
+        if (typeParameters.length == 0) {
             throw new IllegalArgumentException(targetClass.getName() + " is not a generic class.");
         } else if (targetTypeVariableIndex >= typeParameters.length) {
             throw new IndexOutOfBoundsException("Generic parameter index " + targetTypeVariableIndex + " is invalid for class " + targetClass
                 .getName());
         }
         return resolveTypeVariables(boundType).get(typeParameters[targetTypeVariableIndex]);
+    }
+
+
+    private static Type commonSubtype(Type left, Type right) {
+        // Find the subtype
+        Class<?> leftClass = rawType(left);
+        Class<?> rightClass = rawType(right);
+        Type subType;
+        Type superType;
+        // Identify where left and right are at in the type hierarchy
+        if (leftClass.isAssignableFrom(rightClass)) {
+            subType = right;
+            superType = left;
+        } else if (rightClass.isAssignableFrom(leftClass)) {
+            subType = left;
+            superType = right;
+        } else {
+            throw new IllegalArgumentException(left + " and " + right + " do not share a common subtype");
+        }
+        // Identify what gaps there are in the subtype
+        return null;
+
+    }
+
+    private static Type reifyTypeParameter(Type left, Type right) {
+        return null;
     }
 
     @Value
